@@ -7,7 +7,7 @@ BEGIN {
   $Gentoo::Overlay::Package::AUTHORITY = 'cpan:KENTNL';
 }
 {
-  $Gentoo::Overlay::Package::VERSION = '1.0.1';
+  $Gentoo::Overlay::Package::VERSION = '1.0.2';
 }
 
 # ABSTRACT: Class for Package's in Gentoo Overlays
@@ -101,31 +101,39 @@ sub pretty_name {
 
 sub iterate {
   my ( $self, $what, $callback ) = @_;
-  if ( $what eq 'ebuilds' ) {
-    my %ebuilds     = $self->ebuilds();
-    my $num_ebuilds = scalar keys %ebuilds;
-    my $last_ebuild = $num_ebuilds - 1;
-    my $offset      = 0;
-    for my $ename ( sort keys %ebuilds ) {
-      local $_ = $ebuilds{$ename};
-      $self->$callback(
-        {
-          ebuild_name => $ename,
-          ebuild      => $ebuilds{$ename},
-          num_ebuilds => $num_ebuilds,
-          last_ebuild => $last_ebuild,
-          ebuild_num  => $offset,
-        }
-      );
-      $offset++;
-    }
-    return;
+  my %method_map = ( ebuilds => _iterate_ebuilds =>, );
+  if ( exists $method_map{$what} ) {
+    goto $self->can( $method_map{$what} );
   }
   return exception(
     ident   => 'bad iteration method',
     message => 'The iteration method %{what_method}s is not a known way to iterate.',
     payload => { what_method => $what },
   );
+}
+
+# ebuilds = {/ebuilds }
+sub _iterate_ebuilds {
+  my ( $self, $what, $callback ) = @_;
+  my %ebuilds     = $self->ebuilds();
+  my $num_ebuilds = scalar keys %ebuilds;
+  my $last_ebuild = $num_ebuilds - 1;
+  my $offset      = 0;
+  for my $ename ( sort keys %ebuilds ) {
+    local $_ = $ebuilds{$ename};
+    $self->$callback(
+      {
+        ebuild_name => $ename,
+        ebuild      => $ebuilds{$ename},
+        num_ebuilds => $num_ebuilds,
+        last_ebuild => $last_ebuild,
+        ebuild_num  => $offset,
+      }
+    );
+    $offset++;
+  }
+  return;
+
 }
 no Moose;
 __PACKAGE__->meta->make_immutable;
@@ -141,7 +149,7 @@ Gentoo::Overlay::Package - Class for Package's in Gentoo Overlays
 
 =head1 VERSION
 
-version 1.0.1
+version 1.0.2
 
 =head1 SYNOPSIS
 
@@ -321,6 +329,14 @@ L</_scan_blacklist>
 Generates the ebuild Hash-Table, by scanning the package directory.
 
 L</_packages>
+
+=head2 _iterate_ebuilds
+
+  $object->_iterate_ebuilds( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( ebuilds => sub { } );
 
 =head1 AUTHOR
 

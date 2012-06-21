@@ -7,7 +7,7 @@ BEGIN {
   $Gentoo::Overlay::Category::AUTHORITY = 'cpan:KENTNL';
 }
 {
-  $Gentoo::Overlay::Category::VERSION = '1.0.1';
+  $Gentoo::Overlay::Category::VERSION = '1.0.2';
 }
 
 # ABSTRACT: A singular category in a repository;
@@ -95,45 +95,59 @@ sub pretty_name {
 
 sub iterate {
   my ( $self, $what, $callback ) = @_;
-  if ( $what eq 'packages' ) {
-    my %packages     = $self->packages();
-    my $num_packages = scalar keys %packages;
-    my $last_package = $num_packages - 1;
-    my $offset       = 0;
-    for my $pname ( sort keys %packages ) {
-      local $_ = $packages{$pname};
-      $self->$callback(
-        {
-          package_name => $pname,
-          package      => $packages{$pname},
-          num_packages => $num_packages,
-          last_package => $last_package,
-          package_num  => $offset,
-        }
-      );
-      $offset++;
-    }
-    return;
-  }
-  if ( $what eq 'ebuilds' ) {
-    $self->iterate(
-      packages => sub {
-        my (%pconfig) = %{ $_[1] };
-        $pconfig{package}->iterate(
-          'ebuilds' => sub {
-            my %econfig = %{ $_[1] };
-            $self->$callback( { ( %pconfig, %econfig ) } );
-          }
-        );
-      }
-    );
-    return;
+  my %method_map = (
+    packages => _iterate_packages =>,
+    ebuilds  => _iterate_ebuilds  =>,
+  );
+  if ( exists $method_map{$what} ) {
+    goto $self->can( $method_map{$what} );
   }
   return exception(
     ident   => 'bad iteration method',
     message => 'The iteration method %{what_method}s is not a known way to iterate.',
     payload => { what_method => $what, },
   );
+}
+
+# packages = { /packages }
+sub _iterate_packages {
+  my ( $self, $what, $callback ) = @_;
+  my %packages     = $self->packages();
+  my $num_packages = scalar keys %packages;
+  my $last_package = $num_packages - 1;
+  my $offset       = 0;
+  for my $pname ( sort keys %packages ) {
+    local $_ = $packages{$pname};
+    $self->$callback(
+      {
+        package_name => $pname,
+        package      => $packages{$pname},
+        num_packages => $num_packages,
+        last_package => $last_package,
+        package_num  => $offset,
+      }
+    );
+    $offset++;
+  }
+  return;
+
+}
+
+# ebuilds = { /packages/ebuilds }
+sub _iterate_ebuilds {
+  my ( $self, $what, $callback ) = @_;
+  my $real_callback = sub {
+
+    my (%pconfig) = %{ $_[1] };
+    my $inner_callback = sub {
+      my %econfig = %{ $_[1] };
+      $self->$callback( { ( %pconfig, %econfig ) } );
+    };
+    $pconfig{package}->_iterate_ebuilds( 'ebuilds' => $inner_callback );
+  };
+  $self->_iterate_packages( packages => $real_callback );
+  return;
+
 }
 no Moose;
 __PACKAGE__->meta->make_immutable;
@@ -149,7 +163,7 @@ Gentoo::Overlay::Category - A singular category in a repository;
 
 =head1 VERSION
 
-version 1.0.1
+version 1.0.2
 
 =head1 SYNOPSIS
 
@@ -340,6 +354,22 @@ L</_scan_blacklist>
 Generates the package Hash-Table, by scanning the category directory.
 
 L</_packages>
+
+=head2 _iterate_packages
+
+  $object->_iterate_packages( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( packages => sub { } );
+
+=head2 _iterate_ebuilds
+
+  $object->_iterate_ebuilds( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( ebuilds => sub { } );
 
 =head1 AUTHOR
 

@@ -7,7 +7,7 @@ BEGIN {
   $Gentoo::Overlay::AUTHORITY = 'cpan:KENTNL';
 }
 {
-  $Gentoo::Overlay::VERSION = '1.0.1';
+  $Gentoo::Overlay::VERSION = '1.0.2';
 }
 
 # ABSTRACT: Tools for working with Gentoo Overlays
@@ -175,60 +175,76 @@ sub _build___categories_scan {
 
 sub iterate {
   my ( $self, $what, $callback ) = @_;
-  if ( $what eq 'categories' ) {
-    my %categories     = $self->categories();
-    my $num_categories = scalar keys %categories;
-    my $last_category  = $num_categories - 1;
-    my $offset         = 0;
-    for my $cname ( sort keys %categories ) {
-      local $_ = $categories{$cname};
-      $self->$callback(
-        {
-          category_name  => $cname,
-          category       => $categories{$cname},
-          num_categories => $num_categories,
-          last_category  => $last_category,
-          category_num   => $offset,
-        }
-      );
-      $offset++;
-    }
-    return;
+  my %method_map = (
+    categories => _iterate_categories =>,
+    packages   => _iterate_packages   =>,
+    ebuilds    => _iterate_ebuilds    =>,
+  );
+  if ( exists $method_map{$what} ) {
+    goto $self->can( $method_map{$what} );
   }
-  if ( $what eq 'packages' ) {
-    $self->iterate(
-      'categories' => sub {
-        my (%cconfig) = %{ $_[1] };
-        $cconfig{category}->iterate(
-          'packages' => sub {
-            my %pconfig = %{ $_[1] };
-            $self->$callback( { ( %cconfig, %pconfig ) } );
-          }
-        );
-      }
-    );
-    return;
-  }
-  if ( $what eq 'ebuilds' ) {
-    $self->iterate(
-      'packages' => sub {
-        my (%cconfig) = %{ $_[1] };
-        $cconfig{package}->iterate(
-          'ebuilds' => sub {
-            my %pconfig = %{ $_[1] };
-            $self->$callback( { ( %cconfig, %pconfig ) } );
-          }
-        );
-      }
-    );
-    return;
-  }
-
   return exception(
     ident   => 'bad iteration method',
     message => 'The iteration method %{what_method}s is not a known way to iterate.',
     payload => { what_method => $what, },
   );
+}
+
+# ebuilds = { /categories/packages/ebuilds }
+sub _iterate_ebuilds {
+  my ( $self, $what, $callback ) = @_;
+
+  my $real_callback = sub {
+    my (%cconfig) = %{ $_[1] };
+    my $inner_callback = sub {
+      my %pconfig = %{ $_[1] };
+      $self->$callback( { ( %cconfig, %pconfig ) } );
+    };
+    $cconfig{package}->_iterate_ebuilds( 'ebuilds' => $inner_callback );
+  };
+
+  $self->_iterate_packages( 'packages' => $real_callback );
+  return;
+
+}
+
+# categories = { /categories }
+sub _iterate_categories {
+  my ( $self, $what, $callback ) = @_;
+  my %categories     = $self->categories();
+  my $num_categories = scalar keys %categories;
+  my $last_category  = $num_categories - 1;
+  my $offset         = 0;
+  for my $cname ( sort keys %categories ) {
+    local $_ = $categories{$cname};
+    $self->$callback(
+      {
+        category_name  => $cname,
+        category       => $categories{$cname},
+        num_categories => $num_categories,
+        last_category  => $last_category,
+        category_num   => $offset,
+      }
+    );
+    $offset++;
+  }
+  return;
+}
+
+# packages = { /categories/packages }
+sub _iterate_packages {
+  my ( $self, $what, $callback ) = @_;
+
+  my $real_callback = sub {
+    my (%cconfig) = %{ $_[1] };
+    my $inner_callback = sub {
+      my %pconfig = %{ $_[1] };
+      $self->$callback( { ( %cconfig, %pconfig ) } );
+    };
+    $cconfig{category}->_iterate_packages( 'packages' => $inner_callback );
+  };
+  $self->_iterate_categories( 'categories' => $real_callback );
+  return;
 }
 no Moose;
 __PACKAGE__->meta->make_immutable;
@@ -244,7 +260,7 @@ Gentoo::Overlay - Tools for working with Gentoo Overlays
 
 =head1 VERSION
 
-version 1.0.1
+version 1.0.2
 
 =head1 SYNOPSIS
 
@@ -493,6 +509,30 @@ Builds the category map the hard way by scanning the directory and then skipping
 that are files and/or blacklisted.
 
     $overlay->_build___categories_scan
+
+=head2 _iterate_ebuilds
+
+  $object->_iterate_ebuilds( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( ebuilds => sub { } );
+
+=head2 _iterate_categories
+
+  $object->_iterate_categories( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( categories => sub { } );
+
+=head2 _iterate_packages
+
+  $object->_iterate_packages( ignored_value => sub {  } );
+
+Handles dispatch call for
+
+  $object->iterate( packages => sub { } );
 
 =head1 AUTHOR
 
